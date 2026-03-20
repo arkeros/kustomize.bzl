@@ -1,0 +1,41 @@
+"""Image substitution example: kustomize with Bazel image targets and external images."""
+
+module(
+    name = "kustomize_images_example",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "kustomize.bzl", version = "0.0.0")
+bazel_dep(name = "rules_img", version = "0.3.4")
+
+local_path_override(
+    module_name = "kustomize.bzl",
+    path = "../..",
+)
+
+# Kustomize toolchain
+kustomize = use_extension("@kustomize.bzl//:extensions.bzl", "kustomize")
+kustomize.toolchain()
+use_repo(kustomize, "kustomize_toolchains")
+
+register_toolchains("@kustomize_toolchains//:all")
+
+# Pull base images for building OCI images
+pull = use_repo_rule("@rules_img//img:pull.bzl", "pull")
+
+pull(
+    name = "alpine_linux_arm64",
+    digest = "sha256:410dabcd6f1d53f1f4e5c1ce9553efa298ca6bcdd086dfc976b8f659d58b46d2",
+    layer_handling = "lazy",
+    registry = "index.docker.io",
+    repository = "library/alpine",
+)
+
+pull(
+    name = "alpine_linux_amd64",
+    digest = "sha256:a8560b36e8b8210634f77d9f7f9efd7ffa463e380b75e2e74aff4511df3ef88c",
+    layer_handling = "lazy",
+    registry = "index.docker.io",
+    repository = "library/alpine",
+)

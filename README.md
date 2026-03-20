@@ -133,6 +133,7 @@ kustomize_binary(
 See the [`examples/`](examples/) directory:
 
 - [`examples/simple/`](examples/simple/) - Kustomize overlays with kubeconform validation
+- [`examples/images/`](examples/images/) - Image substitution with Bazel image targets and external images
 
 ## License
 
