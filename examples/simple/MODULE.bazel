@@ -1,0 +1,41 @@
+"""Example usage of kustomize.bzl and kubeconform.bzl modules."""
+
+module(
+    name = "kubernetes_example",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "kustomize.bzl", version = "0.0.0")
+bazel_dep(name = "kubeconform.bzl", version = "0.0.0")
+bazel_dep(name = "rules_multitool", version = "1.11.1")
+
+local_path_override(
+    module_name = "kustomize.bzl",
+    path = "../..",
+)
+
+git_override(
+    module_name = "kubeconform.bzl",
+    commit = "e86cc17",
+    remote = "https://github.com/arkeros/kubeconform.bzl.git",
+)
+
+# Kustomize toolchain
+kustomize = use_extension("@kustomize.bzl//:extensions.bzl", "kustomize")
+kustomize.toolchain()
+use_repo(kustomize, "kustomize_toolchains")
+
+register_toolchains("@kustomize_toolchains//:all")
+
+# Kubeconform toolchain
+kubeconform = use_extension("@kubeconform.bzl//kubeconform:extensions.bzl", "kubeconform")
+kubeconform.toolchain()
+kubeconform.kubernetes_schemas(kubernetes_version = "1.29.0")
+use_repo(kubeconform, "kubeconform_toolchains", "kubernetes_schemas")
+
+register_toolchains("@kubeconform_toolchains//:kubeconform_toolchain")
+
+# Multitool (kubectl)
+multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
+multitool.hub(lockfile = "//:tools.lock.json")
+use_repo(multitool, "multitool")

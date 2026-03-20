@@ -1,0 +1,5 @@
+# Bazel
+**/MODULE.bazel.lock linguist-generated=true
+
+# Go
+**/go.sum linguist-generated=true

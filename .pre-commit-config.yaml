@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://json.schemastore.org/pre-commit-config.json
+repos:
+  - repo: local
+    hooks:
+      - id: buildifier
+        name: Buildifier
+        language: system
+        entry: buildifier -lint=fix
+        files: .*\.bzl$|BUILD\.bazel$|BUILD$|MODULE\.bazel$|WORKSPACE$
+      - id: gazelle
+        name: Gazelle
+        language: system
+        entry: bazel test //test:gazelle.check
+        files: .*\.bzl$|BUILD\.bazel$|BUILD$|MODULE\.bazel$
+        pass_filenames: false
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.12.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]

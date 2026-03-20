@@ -1,0 +1,115 @@
+"""
+Deploy manifests to a Kubernetes cluster.
+
+Usage: aspect deploy <target>
+
+Example:
+  aspect deploy //:prod_manifests
+"""
+
+def impl(ctx) -> int:
+    out = ctx.std.io.stdout
+    err = ctx.std.io.stderr
+
+    if len(ctx.args.target) == 0:
+        err.write("ERROR: target is required\n")
+        err.write("Usage: aspect deploy <target>\n")
+        return 1
+
+    target = ctx.args.target[0]
+
+    # Build the manifest target
+    out.write("Building {}\n".format(target))
+    build = ctx.bazel.build(
+        target,
+        build_events = True,
+        inherit_stderr = False,
+    )
+
+    manifest_path = None
+    for event in build.build_events():
+        if event.kind == "named_set_of_files":
+            for f in event.payload.files:
+                path = f.file.removeprefix("file://")
+                if path.endswith("kustomization.yaml"):
+                    continue
+                if path.endswith(".yaml") or path.endswith(".yml"):
+                    manifest_path = path
+                    out.write("Built {}\n".format(manifest_path))
+
+    build_status = build.wait()
+    if not build_status.success:
+        err.write("ERROR: Build failed with code {}\n".format(build_status.code))
+        return build_status.code
+
+    if manifest_path == None:
+        err.write("ERROR: No manifest file found in build output\n")
+        return 1
+
+    # Push images if {target}_push exists (created by kustomize with images)
+    # The _push target is a multi_deploy rule that pushes all images
+    # Handle both //pkg:name and //pkg formats
+    if ":" in target:
+        push_target = target + "_push"
+    else:
+        # //pkg -> //pkg:pkg_push (default target name is package name)
+        pkg_name = target.split("/")[-1]
+        push_target = "{}:{}_push".format(target, pkg_name)
+    push_results = list(ctx.bazel.query().raw(push_target).eval())
+    if len(push_results) > 0:
+        out.write("Pushing images via {}...\n".format(push_target))
+
+        # Build push target
+        push_build = ctx.bazel.build(push_target, build_events = True)
+        push_exe_path = None
+        for event in push_build.build_events():
+            if event.kind == "named_set_of_files":
+                for f in event.payload.files:
+                    path = f.file.removeprefix("file://")
+                    if "_push" in path and not path.endswith(".yaml"):
+                        push_exe_path = path
+        push_build_status = push_build.wait()
+        if not push_build_status.success:
+            err.write("ERROR: Push build failed with code {}\n".format(push_build_status.code))
+            return push_build_status.code
+
+        if push_exe_path == None:
+            err.write("ERROR: No push executable found in build output\n")
+            return 1
+
+        push_proc = ctx.std.process.command(push_exe_path).spawn()
+        push_status = push_proc.wait()
+        if not push_status.success:
+            err.write("ERROR: Image push failed with code {}\n".format(push_status.code))
+            return push_status.code
+        out.write("Images pushed successfully.\n")
+
+    # Build hermetic kubectl binary
+    kubectl_build = ctx.bazel.build("//:kubectl", build_events = True)
+    kubectl_path = None
+    for event in kubectl_build.build_events():
+        if event.kind == "named_set_of_files":
+            for f in event.payload.files:
+                path = f.file.removeprefix("file://")
+                if path.endswith("/kubectl"):
+                    kubectl_path = path
+    kubectl_build.wait()
+
+    # Apply the manifest
+    out.write("Applying manifest...\n")
+    proc = ctx.std.process.command(kubectl_path).args(["apply", "-f", manifest_path]).spawn()
+    exit = proc.wait()
+
+    if not exit.success:
+        err.write("ERROR: kubectl apply failed with code {}\n".format(exit.code))
+        return exit.code
+
+    out.write("Deploy complete.\n")
+    return 0
+
+deploy = task(
+    implementation = impl,
+    args = {
+        "target": args.positional(),
+    },
+)

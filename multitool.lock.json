@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "prek": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/j178/prek/releases/download/v0.3.0/prek-x86_64-unknown-linux-gnu.tar.gz",
+        "file": "prek-x86_64-unknown-linux-gnu/prek",
+        "sha256": "37e367c8a6b799366676a0aff0b34e9830bfe4e34875b145d30ef12fac6e0bdc",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/j178/prek/releases/download/v0.3.0/prek-aarch64-unknown-linux-gnu.tar.gz",
+        "file": "prek-aarch64-unknown-linux-gnu/prek",
+        "sha256": "2a86c71db19d16106d3849237c9564432aed5d99dd097063e8ccb4c49fee3a30",
+        "os": "linux",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/j178/prek/releases/download/v0.3.0/prek-aarch64-apple-darwin.tar.gz",
+        "file": "prek-aarch64-apple-darwin/prek",
+        "sha256": "9ab0d19a38ce659fe88a1d76ff94b9fd23c31e30be0b22ee94c24fbd92509008",
+        "os": "macos",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/j178/prek/releases/download/v0.3.0/prek-x86_64-apple-darwin.tar.gz",
+        "file": "prek-x86_64-apple-darwin/prek",
+        "sha256": "53ddbc9c6aea7afb6ff9e0b41303881844a0ec956f803f751365f5c3c45d373c",
+        "os": "macos",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

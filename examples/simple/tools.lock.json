@@ -1,0 +1,27 @@
+{
+  "kubectl": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://dl.k8s.io/release/v1.33.5/bin/linux/amd64/kubectl",
+        "sha256": "6a12d6c39e4a611a3687ee24d8c733961bb4bae1ae975f5204400c0a6930c6fc",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://dl.k8s.io/release/v1.33.5/bin/darwin/arm64/kubectl",
+        "sha256": "22f7256932c1c5205d7323a63d16253b8405ecccfd57c7a2484d3219c6822d3e",
+        "os": "macos",
+        "cpu": "arm64"
+      },
+      {
+        "kind": "file",
+        "url": "https://dl.k8s.io/release/v1.33.5/bin/darwin/amd64/kubectl",
+        "sha256": "ebdefb65c60c920510a605f13622e7eadb85bb83ba393d9eed2389bac30672b1",
+        "os": "macos",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}
