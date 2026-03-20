@@ -65,19 +65,40 @@ kustomize_binary(
 
 ### With image substitution
 
+The `kustomize` macro accepts an `images` dict where values can be either Bazel image targets (labels) or external image references (strings). Bazel targets are pushed to the registry and their digest is substituted into the manifests. External references are passed through as-is.
+
 ```starlark
 load("@kustomize.bzl", "kustomize")
 
+OCI_REGISTRY = "europe-southwest1-docker.pkg.dev"
+OCI_REPOSITORY_PREFIX = "my-project/my-repo"
+
 kustomize(
-    name = "manifests",
-    srcs = glob(["k8s/**"]),
+    name = "k8s",
+    srcs = glob(["*.yaml"]),
     images = {
-        "my-app": "//app:image",         # Bazel image target
-        "redis": "redis:7.4-alpine",     # External reference
+        # External image — used as-is in manifests
+        "redis": "redis:8.4.2",
+        # Bazel image targets — built, pushed, digest substituted
+        "nats": "//nats:image_nonroot",
+        "my-app/api": "//my-app/api:image_nonroot",
+        "my-app/web": "//my-app/web:image_nonroot",
+        "my-app/worker": "//my-app/worker:image_nonroot",
     },
-    registry = "localhost:5000",
+    registry = OCI_REGISTRY,
+    repository_prefix = OCI_REPOSITORY_PREFIX,
+    deps = [
+        "//my-app/k8s/base",
+    ],
 )
 ```
+
+This generates:
+- `k8s.yaml` — rendered manifests with image digests
+- `k8s_push` — a `multi_deploy` target that pushes all Bazel images
+- `k8s_<image>_push` — individual push targets per image
+
+The `manifest_registry` attribute can be set separately from `registry` when the cluster sees the registry at a different address than the build host (e.g., `registry.local` inside the cluster vs `localhost:5000` from the build machine).
 
 ### With template substitutions
 
