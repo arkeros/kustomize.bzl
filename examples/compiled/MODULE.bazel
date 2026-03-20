@@ -1,0 +1,37 @@
+"""Compiled example: build kustomize from Go source and register as custom toolchain."""
+
+module(
+    name = "kustomize_compiled_example",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "kustomize.bzl", version = "0.0.0")
+
+local_path_override(
+    module_name = "kustomize.bzl",
+    path = "../..",
+)
+
+# Register custom compiled toolchain (not extension-based)
+register_toolchains("//:kustomize_toolchain")
+
+# Go tooling for compiling kustomize
+bazel_dep(name = "rules_go", version = "0.59.0")
+bazel_dep(name = "gazelle", version = "0.47.0")
+bazel_dep(name = "lazy_bazel_env.bzl", version = "0.0.0")
+
+git_override(
+    module_name = "lazy_bazel_env.bzl",
+    commit = "55685e5",
+    remote = "https://github.com/arkeros/lazy_bazel_env.bzl.git",
+)
+
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.from_file(go_mod = "//:go.mod")
+
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")
+use_repo(
+    go_deps,
+    "io_k8s_sigs_kustomize_kustomize_v5",
+)
