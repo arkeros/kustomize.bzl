@@ -1,0 +1,3 @@
+# OCI images require a Linux target platform.
+# On macOS, use remote execution or cross-compile:
+# build --platforms=@rules_oci//platforms:linux_arm64

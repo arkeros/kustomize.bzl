@@ -9,6 +9,7 @@ Bazel rules for building Kubernetes manifests with [kustomize](https://kustomize
 - Template variable substitution (`${VAR}` syntax)
 - Auto-detection of `kustomization.yaml` directories
 - Integration with [rules_img](https://github.com/bazel-contrib/rules_img) for image push
+- Integration with [rules_oci](https://github.com/bazel-contrib/rules_oci) for digest pinning
 - Cross-platform support (Linux, macOS, Windows)
 
 ## Setup
@@ -100,6 +101,29 @@ This generates:
 
 The `manifest_registry` attribute can be set separately from `registry` when the cluster sees the registry at a different address than the build host (e.g., `registry.local` inside the cluster vs `localhost:5000` from the build machine).
 
+### With rules_oci images
+
+For projects using [rules_oci](https://github.com/bazel-contrib/rules_oci) instead of rules_img, use the `oci_images` parameter. The macro automatically references each target's `.digest` sub-target to pin images by digest.
+
+```starlark
+load("@kustomize.bzl", "kustomize")
+
+kustomize(
+    name = "k8s",
+    srcs = glob(["k8s/**"]),
+    images = {
+        "redis": "redis:7.4-alpine",
+    },
+    oci_images = {
+        "app": "//app:image",
+    },
+    manifest_registry = "europe-west4-docker.pkg.dev",
+    repository_prefix = "my-project/my-repo",
+)
+```
+
+No push targets are created for `oci_images` — use rules_oci's `oci_push` separately. You can mix `images` (rules_img) and `oci_images` (rules_oci) in the same target.
+
 ### With template substitutions
 
 ```starlark
@@ -133,7 +157,8 @@ kustomize_binary(
 See the [`examples/`](examples/) directory:
 
 - [`examples/simple/`](examples/simple/) - Kustomize overlays with kubeconform validation
-- [`examples/images/`](examples/images/) - Image substitution with Bazel image targets and external images
+- [`examples/images/`](examples/images/) - Image substitution with rules_img targets and external images
+- [`examples/oci_images/`](examples/oci_images/) - Image substitution with rules_oci targets
 - [`examples/compiled/`](examples/compiled/) - Compile kustomize from Go source for fully hermetic builds
 
 ## License

@@ -65,6 +65,30 @@ kustomize_library = rule(
     provides = [DefaultInfo, KustomizationInfo],
 )
 
+def _get_digest_files(image_target):
+    """Extract digest files from an image target.
+
+    Supports both rules_img (OutputGroupInfo.digest) and rules_oci (.digest targets
+    that produce plain files via DefaultInfo).
+
+    Args:
+        image_target: A Bazel target providing image digest information.
+
+    Returns:
+        List of digest files.
+    """
+    if OutputGroupInfo in image_target and hasattr(image_target[OutputGroupInfo], "digest"):
+        digest_files = image_target[OutputGroupInfo].digest.to_list()
+        if digest_files:
+            return digest_files
+
+    # Fallback: use DefaultInfo files (for rules_oci .digest targets).
+    digest_files = image_target[DefaultInfo].files.to_list()
+    if digest_files:
+        return digest_files
+
+    fail("Image target %s produced no digest files" % image_target.label)
+
 def _kustomize_binary_impl(ctx):
     if ctx.attr.kustomize:
         kustomize_binary = ctx.executable.kustomize
@@ -120,12 +144,7 @@ def _kustomize_binary_impl(ctx):
         # sees them at their workspace-relative paths.
         image_inputs = []
         for image_target, yaml_name in ctx.attr.images.items():
-            if OutputGroupInfo not in image_target or not hasattr(image_target[OutputGroupInfo], "digest"):
-                fail("Image target %s is missing a 'digest' output group" % image_target.label)
-            digest_files = image_target[OutputGroupInfo].digest.to_list()
-            if not digest_files:
-                fail("Image target %s produced no digest files" % image_target.label)
-            image_inputs.extend(digest_files)
+            image_inputs.extend(_get_digest_files(image_target))
 
         copy_commands = []
         for f in input_files:
@@ -148,10 +167,7 @@ def _kustomize_binary_impl(ctx):
         for image_target, yaml_name in ctx.attr.images.items():
             if not ctx.attr.manifest_registry:
                 fail("manifest_registry is required when images are specified")
-            digest_files = image_target[OutputGroupInfo].digest.to_list()
-            if not digest_files:
-                fail("Image target %s produced no digest files" % image_target.label)
-            digest_file = digest_files[0]
+            digest_file = _get_digest_files(image_target)[0]
             repo_url = _join_path(ctx.attr.manifest_registry, ctx.attr.repository_prefix, yaml_name)
             image_commands.append(
                 'DIGEST=$(cat "$EXECROOT/{}"); cd "$KUSTOMIZATION_DIR" && "$KUSTOMIZE" edit set image "{}={}@${{DIGEST}}"; cd "$WORKDIR"'.format(
@@ -260,6 +276,7 @@ kustomize_binary = rule(
 def kustomize(
         name,
         images = {},
+        oci_images = {},
         substitutions = {},
         registry = None,
         manifest_registry = None,
@@ -276,9 +293,13 @@ def kustomize(
         images: Map of image names (as they appear in YAML) to either Bazel image
                 targets (labels) or external image references (strings).
                 Example: {"my_app": "//app:image", "redis": "redis:6.2.19-alpine"}
-                Bazel image targets must expose a "digest" output group.
+                Bazel image targets must expose a "digest" output group (rules_img).
+        oci_images: Map of image names (as they appear in YAML) to rules_oci image
+                    targets (labels). The macro automatically references the .digest
+                    sub-target. Push is handled separately by rules_oci's oci_push.
+                    Example: {"reporting": "//batch:image"}
         registry: Container registry for pushing images (e.g., "localhost:49291").
-                  Required if Bazel image targets are specified.
+                  Required if rules_img Bazel image targets are specified in images.
         manifest_registry: Registry URL to use in k8s manifests (e.g., "registry.local").
                            Defaults to registry if not specified. Useful when the cluster
                            sees the registry at a different address than the build host.
@@ -302,7 +323,15 @@ def kustomize(
         else:
             fail("Unsupported image value for %s: %s" % (yaml_name, image_value))
 
-    if images_attr and not registry:
+    # rules_oci images: reference the .digest sub-target for digest extraction.
+    # Track these separately so we don't create rules_img push targets for them.
+    oci_digest_labels = {}
+    for yaml_name, image_label in oci_images.items():
+        digest_label = image_label + ".digest"
+        images_attr[digest_label] = yaml_name
+        oci_digest_labels[digest_label] = True
+
+    if images_attr and not registry and not oci_images:
         fail("registry is required when Bazel image targets are specified")
 
     # Use manifest_registry for k8s manifests, falling back to registry
@@ -319,19 +348,23 @@ def kustomize(
         **kwargs
     )
 
+    # Create push targets only for rules_img images (not rules_oci).
     push_targets = []
-    if images_attr:
-        for image_label, yaml_name in images_attr.items():
-            push_name = "{}_{}_push".format(name, _sanitize_name(yaml_name))
-            image_push(
-                name = push_name,
-                image = image_label,
-                registry = registry,
-                repository = _join_path(repository_prefix, yaml_name),
-                tag_file = "//:image_tags",
-                visibility = visibility,
-            )
-            push_targets.append(":" + push_name)
+    for image_label, yaml_name in images_attr.items():
+        if image_label in oci_digest_labels:
+            continue
+        if not registry:
+            fail("registry is required when rules_img image targets are specified")
+        push_name = "{}_{}_push".format(name, _sanitize_name(yaml_name))
+        image_push(
+            name = push_name,
+            image = image_label,
+            registry = registry,
+            repository = _join_path(repository_prefix, yaml_name),
+            tag_file = "//:image_tags",
+            visibility = visibility,
+        )
+        push_targets.append(":" + push_name)
 
     if push_targets:
         multi_deploy(

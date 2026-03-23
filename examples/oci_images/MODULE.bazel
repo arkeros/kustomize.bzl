@@ -1,0 +1,34 @@
+"""Image substitution example using rules_oci instead of rules_img."""
+
+module(
+    name = "kustomize_oci_images_example",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
+bazel_dep(name = "kustomize.bzl", version = "0.0.0")
+bazel_dep(name = "rules_oci", version = "2.2.7")
+
+local_path_override(
+    module_name = "kustomize.bzl",
+    path = "../..",
+)
+
+# Kustomize toolchain
+kustomize = use_extension("@kustomize.bzl//:extensions.bzl", "kustomize")
+kustomize.toolchain()
+use_repo(kustomize, "kustomize_toolchains")
+
+register_toolchains("@kustomize_toolchains//:all")
+
+# Pull a base image using rules_oci
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
+oci.pull(
+    name = "distroless_static",
+    digest = "sha256:3f2b64ef97bd285e36132c684e6b2ae8f2723293d09aae046196cca64251acac",
+    image = "gcr.io/distroless/static",
+    platforms = ["linux/amd64"],
+)
+use_repo(oci, "distroless_static", "distroless_static_linux_amd64")
