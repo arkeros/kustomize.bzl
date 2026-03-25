@@ -235,10 +235,74 @@ cd "$WORKDIR"
         )
 
     if ctx.attr.substitutions:
-        ctx.actions.expand_template(
-            template = kustomize_output,
-            output = final_output,
-            substitutions = ctx.attr.substitutions,
+        # Write each substitution key and value to separate files to avoid
+        # shell escaping issues. The substitution script reads these files
+        # and replaces keys in the template, indenting multiline values to
+        # match the indentation at the substitution point.
+        subst_inputs = [kustomize_output]
+        key_value_args = []
+        for i, (key, value) in enumerate(ctx.attr.substitutions.items()):
+            key_file = ctx.actions.declare_file("{}_subst_key_{}".format(ctx.label.name, i))
+            val_file = ctx.actions.declare_file("{}_subst_val_{}".format(ctx.label.name, i))
+            ctx.actions.write(output = key_file, content = key)
+            ctx.actions.write(output = val_file, content = value)
+            subst_inputs.extend([key_file, val_file])
+            key_value_args.extend([key_file.path, val_file.path])
+
+        subst_script = ctx.actions.declare_file(ctx.label.name + "_subst.sh")
+        ctx.actions.write(
+            output = subst_script,
+            content = """#!/bin/bash
+set -euo pipefail
+INPUT="$1"; shift
+OUTPUT="$1"; shift
+cp "$INPUT" "$OUTPUT.tmp"
+while [ $# -ge 2 ]; do
+    KEY_FILE="$1"; shift
+    VAL_FILE="$1"; shift
+    KEY=$(cat "$KEY_FILE")
+    # Use awk to replace KEY with the contents of VAL_FILE,
+    # indenting continuation lines to match the substitution point.
+    awk -v key="$KEY" -v valfile="$VAL_FILE" '
+    BEGIN {
+        val = ""
+        while ((getline line < valfile) > 0) {
+            if (val != "") val = val "\\n"
+            val = val line
+        }
+        close(valfile)
+    }
+    {
+        idx = index($0, key)
+        if (idx > 0) {
+            prefix = substr($0, 1, idx - 1)
+            suffix = substr($0, idx + length(key))
+            match($0, /^[ \\t]*/)
+            indent = substr($0, RSTART, RLENGTH)
+            n = split(val, parts, "\\n")
+            result = prefix parts[1]
+            for (i = 2; i <= n; i++) {
+                result = result "\\n" indent parts[i]
+            }
+            print result suffix
+        } else {
+            print
+        }
+    }' "$OUTPUT.tmp" > "$OUTPUT.tmp2"
+    mv "$OUTPUT.tmp2" "$OUTPUT.tmp"
+done
+mv "$OUTPUT.tmp" "$OUTPUT"
+""",
+            is_executable = True,
+        )
+
+        ctx.actions.run(
+            outputs = [final_output],
+            inputs = subst_inputs,
+            executable = subst_script,
+            arguments = [kustomize_output.path, final_output.path] + key_value_args,
+            mnemonic = "KustomizeSubstitute",
+            progress_message = "Substituting variables in %{label}",
         )
 
     return [DefaultInfo(files = depset([final_output]))]
