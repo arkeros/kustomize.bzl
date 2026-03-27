@@ -153,7 +153,7 @@ def _kustomize_binary_impl(ctx):
                 # External repo: short_path is "../<canonical_repo_name>/file.yaml"
                 # Prefix with "external/" to match kustomize relative path expectations.
                 rel_path = "external/" + rel_path[3:]
-            copy_commands.append('REL_PATH="{}"; REL_PATH=$(echo "$REL_PATH" | sed "s|external/+[^+]*+|external/|"); mkdir -p "$WORKDIR/$(dirname "$REL_PATH")" && cp "$EXECROOT/{}" "$WORKDIR/$REL_PATH"'.format(rel_path, f.path))
+            copy_commands.append('REL_PATH="{}"; REL_PATH=$(echo "$REL_PATH" | sed "s|external/[^/]*[~+]|external/|"); mkdir -p "$WORKDIR/$(dirname "$REL_PATH")" && cp "$EXECROOT/{}" "$WORKDIR/$REL_PATH"'.format(rel_path, f.path))
 
         image_commands = []
         for yaml_name, image_ref in ctx.attr.external_images.items():
@@ -178,15 +178,19 @@ def _kustomize_binary_impl(ctx):
             )
 
         # Normalize kustomization_dir the same way copy commands normalize paths:
-        # strip Bazel's internal +<segment>+ prefix from external repo paths
-        # e.g., external/+_repo_rules3+redis-operator -> external/redis-operator
+        # strip Bazel canonical repo prefixes from external repo paths.
+        # Bazel 7: external/_main~_repo_rules~redis-operator -> external/redis-operator
+        # Bazel 8+: external/+_repo_rules+redis-operator -> external/redis-operator
         normalized_kustomization_dir = kustomization_dir
-        if normalized_kustomization_dir.startswith("external/+"):
-            # Find the second '+' and strip from first '+' to second '+' inclusive
-            rest = normalized_kustomization_dir[len("external/+"):]
-            plus_idx = rest.find("+")
-            if plus_idx >= 0:
-                normalized_kustomization_dir = "external/" + rest[plus_idx + 1:]
+        if normalized_kustomization_dir.startswith("external/"):
+            first_slash = normalized_kustomization_dir.find("/", len("external/"))
+            segment = normalized_kustomization_dir[len("external/"):first_slash] if first_slash > 0 else ""
+            for sep in ["~", "+"]:
+                idx = segment.rfind(sep)
+                if idx >= 0:
+                    segment = segment[idx + 1:]
+            if first_slash > 0:
+                normalized_kustomization_dir = "external/" + segment + normalized_kustomization_dir[first_slash:]
 
         script = ctx.actions.declare_file(ctx.label.name + "_kustomize.sh")
         ctx.actions.write(
