@@ -1,7 +1,5 @@
 """Kustomize rules for building Kubernetes manifests."""
 
-load("@rules_img//img:multi_deploy.bzl", "multi_deploy")
-load("@rules_img//img:push.bzl", "image_push")
 load("//toolchain:toolchain.bzl", "KustomizeInfo")
 
 KustomizationInfo = provider(
@@ -165,10 +163,10 @@ def _kustomize_binary_impl(ctx):
             )
 
         for image_target, yaml_name in ctx.attr.images.items():
-            if not ctx.attr.manifest_registry:
-                fail("manifest_registry is required when images are specified")
+            if not ctx.attr.registry:
+                fail("registry is required when images are specified")
             digest_file = _get_digest_files(image_target)[0]
-            repo_url = _join_path(ctx.attr.manifest_registry, ctx.attr.repository_prefix, yaml_name)
+            repo_url = _join_path(ctx.attr.registry, ctx.attr.repository_prefix, yaml_name)
             image_commands.append(
                 'DIGEST=$(cat "$EXECROOT/{}"); cd "$KUSTOMIZATION_DIR" && "$KUSTOMIZE" edit set image "{}={}@${{DIGEST}}"; cd "$WORKDIR"'.format(
                     digest_file.path,
@@ -329,8 +327,8 @@ kustomize_binary = rule(
         "external_images": attr.string_dict(
             doc = "Map of image names (as they appear in YAML) to external image references.",
         ),
-        "manifest_registry": attr.string(
-            doc = "Registry URL to use in k8s manifests (e.g., 'registry.local').",
+        "registry": attr.string(
+            doc = "Registry URL to use in k8s manifests (e.g., 'ghcr.io').",
         ),
         "repository_prefix": attr.string(
             doc = "Repository prefix (e.g., 'myproject/repo').",
@@ -364,13 +362,10 @@ def kustomize(
                 Bazel image targets must expose a "digest" output group (rules_img).
         oci_images: Map of image names (as they appear in YAML) to rules_oci image
                     targets (labels). The macro automatically references the .digest
-                    sub-target. Push is handled separately by rules_oci's oci_push.
+                    sub-target.
                     Example: {"reporting": "//batch:image"}
-        registry: Container registry for pushing images (e.g., "localhost:49291").
-                  Required if rules_img Bazel image targets are specified in images.
-        manifest_registry: Registry URL to use in k8s manifests (e.g., "registry.local").
-                           Defaults to registry if not specified. Useful when the cluster
-                           sees the registry at a different address than the build host.
+        registry: Registry URL to use in k8s manifests (e.g., "ghcr.io").
+        manifest_registry: Deprecated alias for registry.
         repository_prefix: Repository prefix (e.g., "myproject/repo").
         visibility: The visibility of the generated targets.
         **kwargs: Additional arguments passed to kustomize_binary.
@@ -399,44 +394,15 @@ def kustomize(
         images_attr[digest_label] = yaml_name
         oci_digest_labels[digest_label] = True
 
-    if images_attr and not registry and not oci_images:
-        fail("registry is required when Bazel image targets are specified")
-
-    # Use manifest_registry for k8s manifests, falling back to registry
-    manifest_registry = manifest_registry or registry
+    resolved_registry = registry or manifest_registry
 
     kustomize_binary(
         name = name,
         substitutions = substitutions,
         images = images_attr if images_attr else {},
         external_images = external_images if external_images else {},
-        manifest_registry = manifest_registry,
+        registry = resolved_registry,
         repository_prefix = repository_prefix,
         visibility = visibility,
         **kwargs
     )
-
-    # Create push targets only for rules_img images (not rules_oci).
-    push_targets = []
-    for image_label, yaml_name in images_attr.items():
-        if image_label in oci_digest_labels:
-            continue
-        if not registry:
-            fail("registry is required when rules_img image targets are specified")
-        push_name = "{}_{}_push".format(name, _sanitize_name(yaml_name))
-        image_push(
-            name = push_name,
-            image = image_label,
-            registry = registry,
-            repository = _join_path(repository_prefix, yaml_name),
-            tag_file = "//:image_tags",
-            visibility = visibility,
-        )
-        push_targets.append(":" + push_name)
-
-    if push_targets:
-        multi_deploy(
-            name = name + "_push",
-            operations = push_targets,
-            visibility = visibility,
-        )
